@@ -1,0 +1,114 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"html/template"
+	"io/ioutil"
+	"log"
+	"net/http"
+)
+
+// ChatGPTAPIResponse represents the response from the ChatGPT API
+type ChatGPTAPIResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+}
+
+func main() {
+	http.HandleFunc("/", handleForm)
+	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+
+func handleForm(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		// Get the user input from the form
+		userInput := r.FormValue("user_input")
+
+		// Submit the question to the ChatGPT API
+		apiResponse := submitToChatGPTAPI(userInput)
+
+		// Create a waiting spinner and display it
+		spinner := `<div class="spinner"></div>`
+		responseHTML := template.HTML(spinner)
+		renderResponse(w, responseHTML)
+
+		// Get the response from the ChatGPT API
+		response := apiResponse.Choices[0].Message.Content
+
+		// Display the response
+		responseHTML = template.HTML(response)
+		renderResponse(w, responseHTML)
+
+		// Display a new form for the next input
+		renderForm(w)
+	} else {
+		renderForm(w)
+	}
+}
+
+func submitToChatGPTAPI(question string) *ChatGPTAPIResponse {
+	apiURL := "https://api.openai.com/v1/chat/completions"
+
+	// Prepare the request payload
+	payload := struct {
+		Model     string   `json:"model"`
+		MaxTokens int      `json:"max_tokens"`
+		Prompt    string   `json:"prompt"`
+		Stop      []string `json:"stop"`
+	}{
+		Model:     "gpt-3.5-turbo",
+		MaxTokens: 100,
+		Prompt:    question,
+		Stop:      []string{"\n"},
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Send the request to the ChatGPT API
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		log.Fatal(err)
+	}
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", "Bearer YOUR_API_KEY")
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// Read and parse the response
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var apiResponse ChatGPTAPIResponse
+	err = json.Unmarshal(respBody, &apiResponse)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return &apiResponse
+}
+
+func renderForm(w http.ResponseWriter) {
+	formHTML := `
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<style>
+				.spinner {
+					border: 4px solid #f3f3f3;
+					border-top: 4px solid #3498db;
+					border-radius: 50%;
+					width: 20px;
+					height: 20px;
+					animation: spin 1s

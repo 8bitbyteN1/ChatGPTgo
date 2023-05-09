@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# Install necessary modules
+apt-get update
+apt-get install -y golang apache2
+
+# Create a directory for the code
+mkdir /var/www/html/myapp
+
+# Save the Go code to be served by Apache
+cat > /var/www/html/myapp/main.go <<EOF
+$(cat main.go)
+EOF
+
+# Build the Go code
+cd /var/www/html/myapp
+go build
+
+# Configure Apache to serve the application
+cat > /etc/apache2/sites-available/myapp.conf <<EOF
+<VirtualHost *:80>
+    ServerName localhost
+    DocumentRoot /var/www/html/myapp
+
+    <Directory /var/www/html/myapp>
+        Options +ExecCGI
+        AddHandler cgi-script .cgi .pl .py .rb .go
+    </Directory>
+</VirtualHost>
+EOF
+
+# Enable the site and restart Apache
+a2ensite myapp.conf
+systemctl restart apache2
